@@ -1,4 +1,12 @@
 [package]
 name = "parse-that-json"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
+authors = ["stinta"]
+description = "Basic json parser library"
+readme = "README.md"
+repository = "https://github.com/prodbysky/parse-that-json"
+license = "MIT"
+keywords = ["serialization", "json", "parsing"]
+categories = ["parser-implementations"]
+
