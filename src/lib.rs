@@ -8,6 +8,32 @@ pub enum Value {
     Bool(bool),
     Number(f64),
     String(String),
+    Array(Vec<Value>),
+}
+
+pub fn parse(src: &str) -> ParseResult<(Option<Value>, &str)> {
+    let src = src.trim();
+
+    if src.is_empty() {
+        return Ok((None, src));
+    }
+
+    if let Some(((), remaining)) = parse_null(src) {
+        return Ok((Some(Value::Null), remaining));
+    }
+
+    if let Some((value, remaining)) = parse_bool(src) {
+        return Ok((Some(Value::Bool(value)), remaining));
+    }
+
+    if let Some((value, remaining)) = parse_number(src) {
+        return Ok((Some(Value::Number(value)), remaining));
+    }
+    if let Some((value, remaining)) = parse_string(src) {
+        return Ok((Some(Value::String(value)), remaining));
+    }
+
+    unreachable!()
 }
 
 type ElementParseOption<'a, T> = Option<(T, &'a str)>;
@@ -92,7 +118,7 @@ fn parse_number(src: &str) -> ElementParseOption<f64> {
         .map(|n| (n, &src[pos..]))
 }
 
-fn parse_string(src: &str) -> Option<(String, &str)> {
+fn parse_string(src: &str) -> ElementParseOption<String> {
     if !src.starts_with('"') {
         return None;
     }
@@ -132,30 +158,6 @@ fn parse_string(src: &str) -> Option<(String, &str)> {
     }
 
     None
-}
-pub fn parse(src: &str) -> ParseResult<(Option<Value>, &str)> {
-    let src = src.trim();
-
-    if src.is_empty() {
-        return Ok((None, src));
-    }
-
-    if let Some(((), remaining)) = parse_null(src) {
-        return Ok((Some(Value::Null), remaining));
-    }
-
-    if let Some((value, remaining)) = parse_bool(src) {
-        return Ok((Some(Value::Bool(value)), remaining));
-    }
-
-    if let Some((value, remaining)) = parse_number(src) {
-        return Ok((Some(Value::Number(value)), remaining));
-    }
-    if let Some((value, remaining)) = parse_string(src) {
-        return Ok((Some(Value::String(value)), remaining));
-    }
-
-    unreachable!()
 }
 
 #[cfg(test)]
