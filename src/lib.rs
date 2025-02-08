@@ -1,10 +1,13 @@
+use std::collections::HashMap;
+
 #[derive(Debug, PartialEq, Clone)]
-pub enum Value {
+pub enum Value<'a> {
     Null,
     Bool(bool),
     Number(f64),
-    String(String),
-    Array(Vec<Value>),
+    String(&'a str),
+    Array(Vec<Value<'a>>),
+    Object(HashMap<&'a str, Value<'a>>),
 }
 
 pub fn parse(src: &str) -> ElementParseOption<Option<Value>> {
@@ -25,14 +28,156 @@ pub fn parse(src: &str) -> ElementParseOption<Option<Value>> {
     if let Some((value, remaining)) = parse_number(src) {
         return Some((Some(Value::Number(value)), remaining));
     }
+
     if let Some((value, remaining)) = parse_string(src) {
         return Some((Some(Value::String(value)), remaining));
     }
 
-    unreachable!()
+    if let Some((value, remaining)) = parse_array(src) {
+        return Some((Some(Value::Array(value)), remaining));
+    }
+    if let Some((value, remaining)) = parse_object(src) {
+        return Some((Some(Value::Object(value)), remaining));
+    }
+
+    None
+}
+
+impl std::fmt::Display for Value<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Null => write!(f, "null"),
+            Self::Bool(b) => write!(f, "{b}"),
+            Self::String(str) => write!(f, "{str}"),
+            Self::Number(num) => write!(f, "{num}"),
+            Self::Array(arr) => {
+                writeln!(f, "[")?;
+                for e in arr {
+                    writeln!(f, "  {e}")?;
+                }
+                writeln!(f, "]")
+            }
+            Self::Object(values) => {
+                writeln!(f, "{{")?;
+                for (k, v) in values.iter() {
+                    writeln!(f, "{k}: {v}")?;
+                }
+
+                writeln!(f, "}}")
+            }
+        }
+    }
 }
 
 type ElementParseOption<'a, T> = Option<(T, Option<&'a str>)>;
+
+fn parse_array(src: &str) -> ElementParseOption<Vec<Value<'_>>> {
+    let mut remaining = src.trim_start();
+
+    if !remaining.starts_with('[') {
+        return None;
+    }
+
+    remaining = remaining[1..].trim_start();
+
+    let mut elements = Vec::new();
+
+    loop {
+        if remaining.starts_with(']') {
+            remaining = remaining[1..].trim_start();
+            return Some((
+                elements,
+                if remaining.is_empty() {
+                    None
+                } else {
+                    Some(remaining)
+                },
+            ));
+        }
+
+        let (element, next_remaining) = match parse(remaining) {
+            Some((Some(e), r)) => (e, r),
+            _ => return None,
+        };
+
+        elements.push(element);
+
+        remaining = match next_remaining {
+            Some(r) => r.trim_start(),
+            None => "",
+        };
+
+        if remaining.starts_with(',') {
+            remaining = remaining[1..].trim_start();
+        } else if remaining.starts_with(']') {
+            continue;
+        } else {
+            return None;
+        }
+    }
+}
+
+fn parse_object(src: &str) -> ElementParseOption<HashMap<&'_ str, Value<'_>>> {
+    let mut remaining = src.trim_start();
+
+    if !remaining.starts_with('{') {
+        return None;
+    }
+
+    remaining = remaining[1..].trim_start();
+
+    let mut map = HashMap::new();
+
+    loop {
+        if remaining.starts_with('}') {
+            remaining = remaining[1..].trim_start();
+            return Some((
+                map,
+                if remaining.is_empty() {
+                    None
+                } else {
+                    Some(remaining)
+                },
+            ));
+        }
+
+        let (key, next_remaining) = match parse_string(remaining) {
+            Some((k, next)) => (k, next),
+            _ => return None,
+        };
+
+        remaining = match next_remaining {
+            Some(r) => r.trim_start(),
+            None => return None,
+        };
+
+        if !remaining.starts_with(':') {
+            return None;
+        }
+
+        remaining = remaining[1..].trim_start();
+
+        let (value, next_remaining_value) = match parse(remaining) {
+            Some((Some(v), next)) => (v, next),
+            _ => return None,
+        };
+
+        map.insert(key, value);
+
+        remaining = match next_remaining_value {
+            Some(r) => r.trim_start(),
+            None => "",
+        };
+
+        if remaining.starts_with(',') {
+            remaining = remaining[1..].trim_start();
+        } else if remaining.starts_with('}') {
+            continue;
+        } else {
+            return None;
+        }
+    }
+}
 
 fn parse_null(src: &str) -> ElementParseOption<()> {
     if src.starts_with("null") {
@@ -140,51 +285,51 @@ fn parse_number(src: &str) -> ElementParseOption<f64> {
         })
 }
 
-fn parse_string(src: &str) -> ElementParseOption<String> {
+fn parse_string<'a>(src: &'a str) -> ElementParseOption<'a, &'a str> {
     if !src.starts_with('"') {
         return None;
     }
 
-    let mut pos = 1;
-    let mut buffer = String::new();
     let bytes = src.as_bytes();
+    let mut pos = 1;
+    let mut escaped = false;
 
     while pos < bytes.len() {
-        match bytes[pos] {
-            b'"' => {
-                return Some((
-                    buffer,
-                    match &src[pos + 1..] {
-                        x if x.is_empty() => None,
-                        x => Some(x),
-                    },
-                ))
-            }
-            b'\\' => {
-                pos += 1;
-                match bytes.get(pos)? {
-                    b'"' => buffer.push('"'),
-                    b'\\' => buffer.push('\\'),
-                    b'/' => buffer.push('/'),
-                    b'b' => buffer.push('\u{0008}'),
-                    b'f' => buffer.push('\u{000C}'),
-                    b'n' => buffer.push('\n'),
-                    b'r' => buffer.push('\r'),
-                    b't' => buffer.push('\t'),
-                    b'u' => {
-                        pos += 1;
-                        let hex = src.get(pos..pos + 4)?;
-                        let code = u32::from_str_radix(hex, 16).ok()?;
-                        buffer.push(std::char::from_u32(code)?);
-                        pos += 3;
+        if escaped {
+            match bytes[pos] {
+                b'u' => {
+                    if pos + 4 >= bytes.len() {
+                        return None;
                     }
-                    _ => return None,
+                    pos += 4;
+                }
+                _ => {
+                    pos += 1;
                 }
             }
-            c if c < 0x20 => return None,
-            c => buffer.push(c as char),
+            escaped = false;
+        } else {
+            match bytes[pos] {
+                b'\\' => {
+                    escaped = true;
+                    pos += 1;
+                }
+                b'"' => {
+                    let string_slice = &src[1..pos];
+                    let remaining = if pos + 1 > src.len() {
+                        None
+                    } else {
+                        match &src[pos + 1..] {
+                            x if x.is_empty() => None,
+                            x => Some(x),
+                        }
+                    };
+                    return Some((string_slice, remaining));
+                }
+                c if c < 0x20 => return None,
+                _ => pos += 1,
+            }
         }
-        pos += 1;
     }
 
     None
@@ -230,9 +375,6 @@ mod tests {
 
     #[test]
     fn parse_string() {
-        assert_eq!(
-            parse("\"asd\""),
-            Some((Some(Value::String("asd".to_string())), None))
-        );
+        assert_eq!(parse("\"asd\""), Some((Some(Value::String("asd")), None)));
     }
 }
