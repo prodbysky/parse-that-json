@@ -9,4 +9,3 @@ repository = "https://github.com/prodbysky/parse-that-json"
 license = "MIT"
 keywords = ["serialization", "json", "parsing"]
 categories = ["parser-implementations"]
-
